@@ -185,6 +185,7 @@ export async function createDefect(input) {
  */
 export async function updateDefect(defectId, patch) {
   const payload = {
+    // Only include fields supported by the backend DefectSerializer.
     ...("title" in patch ? { title: patch.title } : {}),
     ...("description" in patch ? { description: patch.description } : {}),
     ...("severity" in patch ? { severity: mapUiSeverityToApi(patch.severity) } : {}),
@@ -193,7 +194,8 @@ export async function updateDefect(defectId, patch) {
     ...("occurred_at" in patch ? { occurred_at: patch.occurred_at || null } : {}),
   };
 
-  const updated = await apiPut(`/api/defects/${encodeURIComponent(defectId)}/`, payload);
+  // Use PATCH for partial update (the UI form contains extra fields not modeled by backend).
+  const updated = await apiPatch(`/api/defects/${encodeURIComponent(defectId)}/`, payload);
   return mapDefectFromApi(updated);
 }
 
