@@ -257,14 +257,22 @@ export async function upsertRootCause(defectId, input) {
     const current = existing[0];
     const id = current.id;
 
+    const normalizeStatus = (v) => String(v || "").trim().toUpperCase();
+    const currentStatus = normalizeStatus(current.status);
+    const requestedStatus = normalizeStatus(input.status);
+
     // Important: do NOT blindly re-send `status` on save.
     // If the existing root cause is already IDENTIFIED/APPROVED, sending the UI default
     // (often IN_PROGRESS) causes an invalid backward transition and a 400.
     // Only include status when the user actually changed it.
+    //
+    // Also: avoid overwriting text fields with empty strings unless the user provided them.
+    // (In this UI input is controlled, so values are present; this keeps behavior safe if
+    // callers reuse this API with partial objects.)
     const payload = {
-      summary: input.summary || "",
-      analysis: input.analysis || "",
-      ...(input.status && input.status !== current.status ? { status: input.status } : {}),
+      ...(input.summary !== undefined ? { summary: input.summary } : {}),
+      ...(input.analysis !== undefined ? { analysis: input.analysis } : {}),
+      ...(requestedStatus && requestedStatus !== currentStatus ? { status: requestedStatus } : {}),
     };
 
     return apiPatch(`/api/root-causes/${encodeURIComponent(id)}/`, payload);
@@ -275,7 +283,7 @@ export async function upsertRootCause(defectId, input) {
     defect_id: Number(defectId),
     summary: input.summary || "",
     analysis: input.analysis || "",
-    status: input.status || "IN_PROGRESS",
+    status: normalizeStatus(input.status) || "IN_PROGRESS",
   });
 }
 
