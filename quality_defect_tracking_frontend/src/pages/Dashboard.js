@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { exportAllDefectsAuditCsv, getBackendHealth, listDefects } from "../api/defects";
+import { downloadDefectAuditCsv, getBackendHealth, listDefects } from "../api/defects";
 import { isApiError } from "../api/client";
 import { ErrorAlert, InfoAlert, Skeleton } from "../components/Primitives";
 import { paretoByDefectTitle, defectTrend } from "../utils/analytics";
@@ -87,13 +87,21 @@ export default function Dashboard() {
   async function onExportAudit() {
     setExportState({ exporting: true, error: null });
     try {
-      const csv = await exportAllDefectsAuditCsv();
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const defects = filteredDefects || [];
+      if (defects.length === 0) {
+        throw new Error("No defects available to export in the current view.");
+      }
+
+      // Minimal deterministic behavior: export the most recently shown defect.
+      // (Backend currently supports per-defect CSV export.)
+      const target = defects[0];
+
+      const { blob, filename } = await downloadDefectAuditCsv(target.id);
       const url = URL.createObjectURL(blob);
 
       const a = document.createElement("a");
       a.href = url;
-      a.download = `defect_audit_export_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.download = filename || `defect_${target.id}_audit.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();

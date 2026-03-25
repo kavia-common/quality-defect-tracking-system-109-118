@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "./client";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut, getApiBaseUrl } from "./client";
 
 /**
  * Creates a stable CSV-safe cell value.
@@ -509,4 +509,46 @@ export async function exportAllDefectsAuditCsv(options = {}) {
   }
 
   return chunks.join("");
+}
+
+/**
+ * PUBLIC_INTERFACE
+ * Download a defect audit export CSV from the backend endpoint as a Blob.
+ *
+ * This matches the backend behavior and ensures the browser triggers a real file download.
+ *
+ * @param {string|number} defectId - Defect id.
+ * @param {{signal?: AbortSignal}} [options]
+ * @returns {Promise<{blob: Blob, filename: string}>}
+ */
+export async function downloadDefectAuditCsv(defectId, options = {}) {
+  const base = getApiBaseUrl() || "";
+  const url = `${base}/api/defects/${encodeURIComponent(defectId)}/audit-export/`;
+
+  const resp = await fetch(url, {
+    method: "GET",
+    credentials: "include",
+    signal: options.signal,
+    headers: {
+      Accept: "text/csv",
+    },
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(
+      `Failed to download audit CSV (${resp.status}). ${text ? `Response: ${text}` : ""}`.trim()
+    );
+  }
+
+  const blob = await resp.blob();
+
+  // Try to honor backend filename if present
+  const cd = resp.headers.get("content-disposition") || "";
+  const match = cd.match(/filename="([^"]+)"/i) || cd.match(/filename=([^;]+)/i);
+  const filename =
+    (match && String(match[1] || "").trim()) ||
+    `defect_${defectId}_audit.csv`;
+
+  return { blob, filename };
 }
