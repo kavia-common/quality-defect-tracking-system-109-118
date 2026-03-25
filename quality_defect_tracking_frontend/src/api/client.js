@@ -116,9 +116,22 @@ export async function apiRequest(path, { method = "GET", body, signal, headers }
   const data = isJson ? await resp.json().catch(() => null) : await resp.text().catch(() => null);
 
   if (!resp.ok) {
-    const message =
+    // Provide a useful message for common DRF validation failures (400),
+    // while keeping a stable fallback for other error shapes.
+    let message =
       (data && typeof data === "object" && (data.detail || data.message)) ||
       `API request failed (${resp.status})`;
+
+    if (resp.status === 400 && data && typeof data === "object") {
+      // DRF serializer errors are usually {field: [msg, ...], ...}
+      // Include them so the UI doesn't just show a generic 400.
+      try {
+        message = `${message}: ${JSON.stringify(data)}`;
+      } catch {
+        // ignore stringify issues
+      }
+    }
+
     throw new ApiError(message, { status: resp.status, data, url, method });
   }
 

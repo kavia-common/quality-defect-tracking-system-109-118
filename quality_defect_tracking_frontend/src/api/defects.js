@@ -357,11 +357,15 @@ export async function updateCorrectiveAction(_defectId, actionId, patch) {
     ...("title" in patch ? { title: patch.title } : {}),
     ...("notes" in patch ? { description: patch.notes || "" } : {}),
     ...("description" in patch ? { description: patch.description || "" } : {}),
-    ...("due_date" in patch ? { due_date: patch.due_date || null } : {}),
+    // Backend expects YYYY-MM-DD (DateField). Keep behavior consistent with create.
+    ...("due_date" in patch ? { due_date: toIsoDateOnly(patch.due_date) } : {}),
     ...("status" in patch ? { status: mapUiActionStatusToApi(patch.status) } : {}),
   };
 
-  const updated = await apiPatch(`/api/corrective-actions/${encodeURIComponent(actionId)}/`, payload);
+  const updated = await apiPatch(
+    `/api/corrective-actions/${encodeURIComponent(actionId)}/`,
+    payload
+  );
   return mapActionFromApi(updated);
 }
 

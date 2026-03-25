@@ -656,18 +656,37 @@ export default function DefectDetail() {
                             </div>
 
                             <div className="inline-row">
-                              <select
-                                className="select"
-                                value={a.status}
-                                onChange={(e) => onUpdateAction(a.id, { status: e.target.value })}
-                                aria-label={`Change status for action ${a.id}`}
-                              >
-                                <option value="Open">Open</option>
-                                <option value="In Progress">In Progress</option>
-                                <option value="Done">Done</option>
-                                <option value="Verified">Verified</option>
-                                <option value="Canceled">Canceled</option>
-                              </select>
+                              {(() => {
+                                // Backend enforces action status transitions:
+                                // OPEN -> IN_PROGRESS|CANCELED
+                                // IN_PROGRESS -> DONE|CANCELED
+                                // DONE -> VERIFIED
+                                // VERIFIED/CANCELED -> (terminal)
+                                const cur = String(a.status || "").trim().toLowerCase();
+                                const allowed = {
+                                  open: ["Open", "In Progress", "Canceled"],
+                                  "in progress": ["In Progress", "Done", "Canceled"],
+                                  done: ["Done", "Verified"],
+                                  verified: ["Verified"],
+                                  canceled: ["Canceled"],
+                                  closed: ["Done"], // legacy UI value maps to DONE
+                                };
+                                const options = allowed[cur] || ["Open", "In Progress", "Done", "Verified", "Canceled"];
+                                return (
+                                  <select
+                                    className="select"
+                                    value={a.status}
+                                    onChange={(e) => onUpdateAction(a.id, { status: e.target.value })}
+                                    aria-label={`Change status for action ${a.id}`}
+                                  >
+                                    {options.map((opt) => (
+                                      <option value={opt} key={opt}>
+                                        {opt}
+                                      </option>
+                                    ))}
+                                  </select>
+                                );
+                              })()}
 
                               <button
                                 className="btn btn-danger btn-small"
