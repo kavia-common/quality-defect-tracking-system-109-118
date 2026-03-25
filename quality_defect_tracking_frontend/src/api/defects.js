@@ -254,14 +254,23 @@ export async function upsertRootCause(defectId, input) {
   // Try find existing root cause by defect filter; then create/update accordingly.
   const existing = await apiGet(`/api/root-causes/?defect=${encodeURIComponent(defectId)}`);
   if (Array.isArray(existing) && existing.length > 0) {
-    const id = existing[0].id;
-    return apiPatch(`/api/root-causes/${encodeURIComponent(id)}/`, {
+    const current = existing[0];
+    const id = current.id;
+
+    // Important: do NOT blindly re-send `status` on save.
+    // If the existing root cause is already IDENTIFIED/APPROVED, sending the UI default
+    // (often IN_PROGRESS) causes an invalid backward transition and a 400.
+    // Only include status when the user actually changed it.
+    const payload = {
       summary: input.summary || "",
       analysis: input.analysis || "",
-      status: input.status || "IN_PROGRESS",
-    });
+      ...(input.status && input.status !== current.status ? { status: input.status } : {}),
+    };
+
+    return apiPatch(`/api/root-causes/${encodeURIComponent(id)}/`, payload);
   }
 
+  // Create: backend requires defect_id (or defect alias) and accepts status.
   return apiPost("/api/root-causes/", {
     defect_id: Number(defectId),
     summary: input.summary || "",
