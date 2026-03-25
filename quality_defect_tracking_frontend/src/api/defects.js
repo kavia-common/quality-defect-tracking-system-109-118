@@ -548,9 +548,52 @@ export async function downloadDefectAuditCsv(defectId, options = {}) {
   // Try to honor backend filename if present
   const cd = resp.headers.get("content-disposition") || "";
   const match = cd.match(/filename="([^"]+)"/i) || cd.match(/filename=([^;]+)/i);
-  const filename =
-    (match && String(match[1] || "").trim()) ||
-    `defect_${defectId}_audit.csv`;
+  const filename = (match && String(match[1] || "").trim()) || `defect_${defectId}_audit.csv`;
+
+  return { blob, filename };
+}
+
+/**
+ * PUBLIC_INTERFACE
+ * Download a defects list export CSV from the backend as a Blob.
+ *
+ * This is used by the Defects list page "Export CSV" button. It sends the current
+ * filter query parameters so the downloaded file matches the current view.
+ *
+ * @param {{status?: string, severity?: string}} [filters]
+ * @param {{signal?: AbortSignal}} [options]
+ * @returns {Promise<{blob: Blob, filename: string}>}
+ */
+export async function downloadDefectsCsv(filters = {}, options = {}) {
+  const base = getApiBaseUrl() || "";
+  const qs = new URLSearchParams();
+
+  if (filters.status) qs.set("status", mapUiStatusToApi(filters.status));
+  if (filters.severity) qs.set("severity", mapUiSeverityToApi(filters.severity));
+
+  const url = `${base}/api/defects/export/${qs.toString() ? `?${qs.toString()}` : ""}`;
+
+  const resp = await fetch(url, {
+    method: "GET",
+    credentials: "include",
+    signal: options.signal,
+    headers: {
+      Accept: "text/csv,application/csv;q=0.9,*/*;q=0.8",
+    },
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(
+      `Failed to download defects CSV (${resp.status}). ${text ? `Response: ${text}` : ""}`.trim()
+    );
+  }
+
+  const blob = await resp.blob();
+
+  const cd = resp.headers.get("content-disposition") || "";
+  const match = cd.match(/filename="([^"]+)"/i) || cd.match(/filename=([^;]+)/i);
+  const filename = (match && String(match[1] || "").trim()) || "defects.csv";
 
   return { blob, filename };
 }

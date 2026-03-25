@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { listDefects } from "../api/defects";
+import { downloadDefectsCsv, listDefects } from "../api/defects";
 import { ErrorAlert, Skeleton } from "../components/Primitives";
 import { formatDate, severityBadgeClass, statusBadgeClass } from "../utils/ui";
 
@@ -11,6 +11,7 @@ import { formatDate, severityBadgeClass, statusBadgeClass } from "../utils/ui";
 export default function DefectList() {
   const [params, setParams] = useSearchParams();
   const [state, setState] = useState({ loading: true, error: null, defects: [] });
+  const [exportState, setExportState] = useState({ exporting: false, error: null });
 
   const filters = useMemo(() => {
     return {
@@ -58,6 +59,29 @@ export default function DefectList() {
     setParams(next, { replace: true });
   }
 
+  async function onExportCsv() {
+    setExportState({ exporting: true, error: null });
+    try {
+      const { blob, filename } = await downloadDefectsCsv(
+        { status: filters.status || undefined, severity: filters.severity || undefined },
+        {}
+      );
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename || "defects.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      setExportState({ exporting: false, error: null });
+    } catch (err) {
+      setExportState({ exporting: false, error: err });
+    }
+  }
+
   return (
     <div>
       <div className="page-header">
@@ -66,11 +90,20 @@ export default function DefectList() {
           <p className="page-subtitle">Search, triage, and manage corrective actions.</p>
         </div>
         <div className="inline-row">
+          <button className="btn" onClick={onExportCsv} disabled={exportState.exporting}>
+            {exportState.exporting ? "Exporting…" : "Export CSV"}
+          </button>
           <Link className="btn btn-primary" to="/defects/new">
             + New defect
           </Link>
         </div>
       </div>
+
+      {exportState.error ? (
+        <div style={{ marginBottom: 12 }}>
+          <ErrorAlert title="CSV export" error={exportState.error} />
+        </div>
+      ) : null}
 
       <div className="card">
         <div className="card-body">
