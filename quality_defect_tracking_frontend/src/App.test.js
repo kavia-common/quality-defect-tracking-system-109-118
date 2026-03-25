@@ -8,6 +8,9 @@ test("renders dashboard title", () => {
       <App />
     </BrowserRouter>
   );
-  const title = screen.getByText(/dashboard/i);
+
+  // Dashboard appears both in the navbar link and as the page <h1>.
+  // Use an unambiguous, accessible query to target the actual page title.
+  const title = screen.getByRole("heading", { name: /dashboard/i, level: 1 });
   expect(title).toBeInTheDocument();
 });
