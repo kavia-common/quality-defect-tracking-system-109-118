@@ -82,6 +82,14 @@ function mapApiActionStatusToUi(apiStatus) {
   return "Open";
 }
 
+/**
+ * Normalizes a backend enum-like status value for stable comparisons.
+ * (Backend typically expects/returns UPPERCASE snake-case; UI values may vary.)
+ */
+function normalizeStatus(v) {
+  return String(v || "").trim().toUpperCase();
+}
+
 function mapDefectFromApi(d) {
   if (!d) return null;
 
@@ -257,7 +265,6 @@ export async function upsertRootCause(defectId, input) {
     const current = existing[0];
     const id = current.id;
 
-    const normalizeStatus = (v) => String(v || "").trim().toUpperCase();
     const currentStatus = normalizeStatus(current.status);
     const requestedStatus = normalizeStatus(input.status);
 
