@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPatch, apiPost, apiPut, getApiBaseUrl } from "./client";
+import { apiDelete, apiGet, apiPatch, apiPost, getApiBaseUrl } from "./client";
 
 /**
  * Creates a stable CSV-safe cell value.
