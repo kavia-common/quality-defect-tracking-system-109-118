@@ -530,7 +530,9 @@ export async function downloadDefectAuditCsv(defectId, options = {}) {
     credentials: "include",
     signal: options.signal,
     headers: {
-      Accept: "text/csv",
+      // Prefer CSV, but include common fallbacks to avoid DRF 406 when intermediaries
+      // (or future refactors) introduce stricter content negotiation.
+      Accept: "text/csv,application/csv;q=0.9,*/*;q=0.8",
     },
   });
 
