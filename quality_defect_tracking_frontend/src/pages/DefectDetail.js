@@ -121,7 +121,11 @@ export default function DefectDetail() {
     e.preventDefault();
     try {
       // Acceptance criteria: each action must include description, owner, due date, status.
-      if (!String(actionDraft.title || "").trim()) throw new Error("Action description is required.");
+      // Backend requires `description` specifically; in this UI the required field is `title`
+      // (labeled "Description *"), and we map it to backend description in the API layer.
+      if (!String(actionDraft.title || "").trim()) {
+        throw new Error("Action description is required.");
+      }
       if (!String(actionDraft.owner || "").trim()) throw new Error("Action owner is required.");
       if (!String(actionDraft.due_date || "").trim()) throw new Error("Action due date is required.");
       if (!String(actionDraft.status || "").trim()) throw new Error("Action status is required.");

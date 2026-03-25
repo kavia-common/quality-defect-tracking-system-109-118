@@ -330,14 +330,25 @@ export async function addCorrectiveAction(defectId, input) {
     throw new Error("Action owner is required.");
   }
 
+  // Backend (DRF) requires a non-empty `description`.
+  // In this UI, the main required text field is `input.title` (labeled "Description *").
+  const description = String(input.title || input.description || "").trim();
+  if (!description) {
+    throw new Error("Action description is required.");
+  }
+
   // Resolve (or create) a backend user so we can satisfy the required `owner` FK.
   const owner = await apiPost("/api/users/resolve/", { username: ownerName });
 
   const created = await apiPost("/api/corrective-actions/", {
     defect: Number(defectId),
     root_cause: input.root_cause_id ?? null,
-    title: input.title || "",
-    description: input.notes || input.description || "",
+
+    // Backend also has a `title` field; since the UI doesn't currently capture a separate
+    // title vs description, we set both to the required description value.
+    title: description,
+    description,
+
     status: mapUiActionStatusToApi(input.status),
     owner: owner?.id,
     due_date: toIsoDateOnly(input.due_date),
