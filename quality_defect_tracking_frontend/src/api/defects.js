@@ -325,13 +325,21 @@ export async function upsertRootCause(defectId, input) {
  * Add a corrective action to a defect (optionally linked to root cause).
  */
 export async function addCorrectiveAction(defectId, input) {
+  const ownerName = String(input.owner || "").trim();
+  if (!ownerName) {
+    throw new Error("Action owner is required.");
+  }
+
+  // Resolve (or create) a backend user so we can satisfy the required `owner` FK.
+  const owner = await apiPost("/api/users/resolve/", { username: ownerName });
+
   const created = await apiPost("/api/corrective-actions/", {
     defect: Number(defectId),
     root_cause: input.root_cause_id ?? null,
     title: input.title || "",
     description: input.notes || input.description || "",
     status: mapUiActionStatusToApi(input.status),
-    owner: null,
+    owner: owner?.id,
     due_date: toIsoDateOnly(input.due_date),
   });
 
