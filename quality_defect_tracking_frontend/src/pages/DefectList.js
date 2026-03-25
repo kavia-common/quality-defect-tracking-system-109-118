@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { downloadDefectsCsv, listDefects } from "../api/defects";
+import { listDefects } from "../api/defects";
 import { ErrorAlert, Skeleton } from "../components/Primitives";
 import { formatDate, severityBadgeClass, statusBadgeClass } from "../utils/ui";
 
@@ -60,22 +60,10 @@ export default function DefectList() {
   }
 
   async function onExportCsv() {
-    setExportState({ exporting: true, error: null });
+    // Force a real browser download by navigating directly to the backend CSV endpoint.
+    // Per requirements: no fetch/axios/blob.
     try {
-      const { blob, filename } = await downloadDefectsCsv(
-        { status: filters.status || undefined, severity: filters.severity || undefined },
-        {}
-      );
-
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename || "defects.csv";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-
+      window.location.href = "http://localhost:3001/api/export-csv";
       setExportState({ exporting: false, error: null });
     } catch (err) {
       setExportState({ exporting: false, error: err });
