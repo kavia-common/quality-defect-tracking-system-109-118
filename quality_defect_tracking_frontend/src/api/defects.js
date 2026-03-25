@@ -84,15 +84,25 @@ function mapApiActionStatusToUi(apiStatus) {
 
 function mapDefectFromApi(d) {
   if (!d) return null;
+
+  // Prefer persisted free-text fields (reporter_name/assigned_to_name) if present;
+  // otherwise fall back to embedded auth-user details.
+  const reportedBy =
+    (d.reporter_name || "").trim() || d.reported_by_detail?.username || "";
+  const assignedTo =
+    (d.assigned_to_name || "").trim() || d.assignee_detail?.username || "";
+
   return {
     id: String(d.id),
     title: d.title || "",
     description: d.description || "",
     severity: mapApiSeverityToUi(d.severity),
     status: mapApiStatusToUi(d.status),
-    // Backend is user-id based; keep UI as string for now, but display usernames if present.
-    reported_by: d.reported_by_detail?.username || "",
-    assigned_to: d.assignee_detail?.username || "",
+    priority: d.priority || "P3",
+    area: d.area || "",
+    tags: Array.isArray(d.tags) ? d.tags : [],
+    reported_by: reportedBy,
+    assigned_to: assignedTo,
     due_date: d.due_date || "",
     created_at: d.created_at || "",
     updated_at: d.updated_at || "",
@@ -170,7 +180,15 @@ export async function createDefect(input) {
     status: mapUiStatusToApi(input.status),
     due_date: input.due_date || null,
     occurred_at: input.occurred_at || null,
-    // reported_by / assignee are user ids in backend; leave null in this simple UI
+
+    // Persist UI fields
+    priority: input.priority || "P3",
+    area: input.area || "",
+    tags: Array.isArray(input.tags) ? input.tags : [],
+    reporter_name: input.reported_by || "",
+    assigned_to_name: input.assigned_to || "",
+
+    // user-id based fields (not used by simple UI yet)
     reported_by: null,
     assignee: null,
   };
@@ -192,9 +210,16 @@ export async function updateDefect(defectId, patch) {
     ...("status" in patch ? { status: mapUiStatusToApi(patch.status) } : {}),
     ...("due_date" in patch ? { due_date: patch.due_date || null } : {}),
     ...("occurred_at" in patch ? { occurred_at: patch.occurred_at || null } : {}),
+
+    // Persist UI fields
+    ...("priority" in patch ? { priority: patch.priority || "P3" } : {}),
+    ...("area" in patch ? { area: patch.area || "" } : {}),
+    ...("tags" in patch ? { tags: Array.isArray(patch.tags) ? patch.tags : [] } : {}),
+    ...("reported_by" in patch ? { reporter_name: patch.reported_by || "" } : {}),
+    ...("assigned_to" in patch ? { assigned_to_name: patch.assigned_to || "" } : {}),
   };
 
-  // Use PATCH for partial update (the UI form contains extra fields not modeled by backend).
+  // Use PATCH for partial update.
   const updated = await apiPatch(`/api/defects/${encodeURIComponent(defectId)}/`, payload);
   return mapDefectFromApi(updated);
 }
