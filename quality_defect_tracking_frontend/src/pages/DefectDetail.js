@@ -2,10 +2,13 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   addCorrectiveAction,
+  closeDefect,
   deleteCorrectiveAction,
   deleteDefect,
   getDefect,
+  transitionDefect,
   updateCorrectiveAction,
+  upsertRootCause,
 } from "../api/defects";
 import { ErrorAlert, Skeleton } from "../components/Primitives";
 import { daysUntil, formatDate, severityBadgeClass, statusBadgeClass } from "../utils/ui";
@@ -27,6 +30,12 @@ export default function DefectDetail() {
     notes: "",
   });
 
+  const [rootCauseDraft, setRootCauseDraft] = useState({
+    status: "IN_PROGRESS",
+    summary: "",
+    analysis: "",
+  });
+
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -39,6 +48,15 @@ export default function DefectDetail() {
           return;
         }
         setState({ loading: false, error: null, defect });
+        if (defect?.root_cause) {
+          setRootCauseDraft({
+            status: defect.root_cause.status || "IN_PROGRESS",
+            summary: defect.root_cause.summary || "",
+            analysis: defect.root_cause.analysis || "",
+          });
+        } else {
+          setRootCauseDraft({ status: "IN_PROGRESS", summary: "", analysis: "" });
+        }
       } catch (err) {
         if (!mounted) return;
         setState({ loading: false, error: err, defect: null });
@@ -98,6 +116,35 @@ export default function DefectDetail() {
     try {
       await deleteDefect(defectId);
       navigate("/defects");
+    } catch (err) {
+      setState((s) => ({ ...s, error: err }));
+    }
+  }
+
+  async function onSaveRootCause(e) {
+    e.preventDefault();
+    try {
+      await upsertRootCause(defectId, rootCauseDraft);
+      await refresh();
+    } catch (err) {
+      setState((s) => ({ ...s, error: err }));
+    }
+  }
+
+  async function onAdvanceDefect(nextStatusApi) {
+    try {
+      await transitionDefect(defectId, nextStatusApi);
+      await refresh();
+    } catch (err) {
+      setState((s) => ({ ...s, error: err }));
+    }
+  }
+
+  async function onCloseDefect() {
+    if (!window.confirm("Close this defect? This will attempt VERIFIED → CLOSED.")) return;
+    try {
+      await closeDefect(defectId);
+      await refresh();
     } catch (err) {
       setState((s) => ({ ...s, error: err }));
     }
@@ -234,6 +281,80 @@ export default function DefectDetail() {
 
           <div className="card">
             <div className="card-header">
+              <h3 className="card-title">Root Cause & Workflow</h3>
+              <div className="inline-row">
+                <button className="btn btn-small" onClick={() => onAdvanceDefect("INVESTIGATING")}>
+                  Set Investigating
+                </button>
+                <button className="btn btn-small" onClick={() => onAdvanceDefect("ACTIONS_IN_PROGRESS")}>
+                  Set Actions in progress
+                </button>
+                <button className="btn btn-secondary btn-small" onClick={onCloseDefect}>
+                  Close defect
+                </button>
+              </div>
+            </div>
+            <div className="card-body">
+              <form className="form" onSubmit={onSaveRootCause}>
+                <div className="grid grid-2">
+                  <div className="field">
+                    <label className="label" htmlFor="rc_status">
+                      Root cause status
+                    </label>
+                    <select
+                      id="rc_status"
+                      className="select"
+                      value={rootCauseDraft.status}
+                      onChange={(e) => setRootCauseDraft((s) => ({ ...s, status: e.target.value }))}
+                    >
+                      <option value="NOT_STARTED">Not started</option>
+                      <option value="IN_PROGRESS">In progress</option>
+                      <option value="IDENTIFIED">Identified</option>
+                      <option value="APPROVED">Approved</option>
+                    </select>
+                    <div className="hint">
+                      Tip: when moving to IDENTIFIED/APPROVED, backend requires a non-empty summary.
+                    </div>
+                  </div>
+
+                  <div className="field">
+                    <label className="label" htmlFor="rc_summary">
+                      Summary
+                    </label>
+                    <input
+                      id="rc_summary"
+                      className="input"
+                      value={rootCauseDraft.summary}
+                      onChange={(e) => setRootCauseDraft((s) => ({ ...s, summary: e.target.value }))}
+                      placeholder="Concise statement of the root cause"
+                    />
+                  </div>
+                </div>
+
+                <div className="field">
+                  <label className="label" htmlFor="rc_analysis">
+                    Analysis
+                  </label>
+                  <textarea
+                    id="rc_analysis"
+                    className="textarea"
+                    value={rootCauseDraft.analysis}
+                    onChange={(e) => setRootCauseDraft((s) => ({ ...s, analysis: e.target.value }))}
+                    placeholder="5-Whys, evidence, tests, contributing factors…"
+                  />
+                </div>
+
+                <div className="actions-row">
+                  <button className="btn btn-secondary" type="submit">
+                    Save root cause
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-header">
               <h3 className="card-title">Corrective Actions</h3>
               <div className="muted small">{(state.defect.corrective_actions || []).length} action(s)</div>
             </div>
@@ -294,7 +415,9 @@ export default function DefectDetail() {
                     >
                       <option value="Open">Open</option>
                       <option value="In Progress">In Progress</option>
-                      <option value="Closed">Closed</option>
+                      <option value="Done">Done</option>
+                      <option value="Verified">Verified</option>
+                      <option value="Canceled">Canceled</option>
                     </select>
                   </div>
 
@@ -356,7 +479,9 @@ export default function DefectDetail() {
                             >
                               <option value="Open">Open</option>
                               <option value="In Progress">In Progress</option>
-                              <option value="Closed">Closed</option>
+                              <option value="Done">Done</option>
+                              <option value="Verified">Verified</option>
+                              <option value="Canceled">Canceled</option>
                             </select>
                             <button className="btn btn-danger btn-small" onClick={() => onDeleteAction(a.id)}>
                               Delete

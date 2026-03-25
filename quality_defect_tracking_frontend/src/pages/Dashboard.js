@@ -107,7 +107,7 @@ export default function Dashboard() {
           <div className="card-body" style={{ fontSize: 28, fontWeight: 800 }}>
             {state.loading ? "—" : metrics.total}
             <div className="muted small" style={{ marginTop: 6 }}>
-              All time (local demo store)
+              All time
             </div>
           </div>
         </div>

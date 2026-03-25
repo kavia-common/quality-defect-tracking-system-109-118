@@ -102,7 +102,9 @@ export default function DefectList() {
                 <option value="">All</option>
                 <option value="Open">Open</option>
                 <option value="Investigating">Investigating</option>
-                <option value="In Progress">In Progress</option>
+                <option value="Root cause identified">Root cause identified</option>
+                <option value="Actions in progress">Actions in progress</option>
+                <option value="Verified">Verified</option>
                 <option value="Closed">Closed</option>
               </select>
             </div>

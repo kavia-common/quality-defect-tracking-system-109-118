@@ -1,170 +1,146 @@
-import { apiGet } from "./client";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "./client";
 
 /**
- * NOTE:
- * The backend container currently only exposes /api/health/.
- * This module therefore:
- * - Calls backend health endpoint for connectivity
- * - Uses localStorage for defect/action CRUD so the full UI works end-to-end in the frontend
+ * Frontend API module backed by the Django REST API.
+ *
+ * Base routing assumptions:
+ * - Backend is served under: <API_BASE>/api/
+ * - Health:              GET  /api/health/
+ * - Defects:             CRUD /api/defects/
+ * - Root causes:         CRUD /api/root-causes/
+ * - Corrective actions:  CRUD /api/corrective-actions/
+ *
+ * Note: The UI uses simplified labels; this module maps them to backend enums.
  */
 
-const LS_KEY = "qdt.defects.v1";
+// -------------------------
+// Enum mapping helpers
+// -------------------------
 
-function nowIso() {
-  return new Date().toISOString();
+function mapUiSeverityToApi(uiSeverity) {
+  const v = String(uiSeverity || "").trim().toLowerCase();
+  if (v === "critical") return "CRITICAL";
+  if (v === "high") return "HIGH";
+  if (v === "major") return "HIGH";
+  if (v === "medium") return "MEDIUM";
+  if (v === "low") return "LOW";
+  if (v === "minor") return "LOW";
+  return "MEDIUM";
 }
 
-function loadAll() {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    const parsed = raw ? JSON.parse(raw) : null;
-    if (Array.isArray(parsed)) return parsed;
-    return [];
-  } catch {
-    return [];
-  }
+function mapApiSeverityToUi(apiSeverity) {
+  const v = String(apiSeverity || "").trim().toUpperCase();
+  if (v === "CRITICAL") return "Critical";
+  if (v === "HIGH") return "Major";
+  if (v === "MEDIUM") return "Medium";
+  if (v === "LOW") return "Minor";
+  return "Medium";
 }
 
-function saveAll(defects) {
-  localStorage.setItem(LS_KEY, JSON.stringify(defects));
+function mapUiStatusToApi(uiStatus) {
+  const v = String(uiStatus || "").trim().toLowerCase();
+  if (v === "open") return "OPEN";
+  if (v === "investigating") return "INVESTIGATING";
+  if (v === "root cause identified") return "ROOT_CAUSE_IDENTIFIED";
+  if (v === "actions in progress") return "ACTIONS_IN_PROGRESS";
+  if (v === "verified") return "VERIFIED";
+  if (v === "closed") return "CLOSED";
+  // historical UI value
+  if (v === "in progress") return "ACTIONS_IN_PROGRESS";
+  return "OPEN";
 }
 
-function ensureSeed() {
-  const existing = loadAll();
-  if (existing.length > 0) return existing;
-
-  const seeded = [
-    {
-      id: "D-10024",
-      title: "Surface scratch on housing (Line 2)",
-      description:
-        "Multiple units show light scratches on the anodized surface after packaging. Suspect tray alignment issue.",
-      status: "Open",
-      severity: "Major",
-      priority: "P2",
-      area: "Packaging",
-      reported_by: "A. Rivera",
-      assigned_to: "J. Kim",
-      created_at: nowIso(),
-      updated_at: nowIso(),
-      due_date: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
-      tags: ["cosmetic", "packaging"],
-      corrective_actions: [
-        {
-          id: "CA-9001",
-          title: "Audit tray alignment and add locator pins",
-          owner: "J. Kim",
-          status: "In Progress",
-          due_date: new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10),
-          notes: "Maintenance to validate fixtures by end of week.",
-          created_at: nowIso(),
-          updated_at: nowIso(),
-        },
-      ],
-    },
-    {
-      id: "D-10025",
-      title: "Intermittent torque fail at station 4",
-      description:
-        "Torque tool reports intermittent fail; retest often passes. Need gauge R&R and tool calibration review.",
-      status: "Investigating",
-      severity: "Critical",
-      priority: "P1",
-      area: "Assembly",
-      reported_by: "M. Chen",
-      assigned_to: "S. Patel",
-      created_at: nowIso(),
-      updated_at: nowIso(),
-      due_date: new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10),
-      tags: ["torque", "calibration"],
-      corrective_actions: [
-        {
-          id: "CA-9002",
-          title: "Calibrate torque tool and verify with master gauge",
-          owner: "S. Patel",
-          status: "Open",
-          due_date: new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10),
-          notes: "",
-          created_at: nowIso(),
-          updated_at: nowIso(),
-        },
-      ],
-    },
-  ];
-
-  saveAll(seeded);
-  return seeded;
+function mapApiStatusToUi(apiStatus) {
+  const v = String(apiStatus || "").trim().toUpperCase();
+  if (v === "OPEN") return "Open";
+  if (v === "INVESTIGATING") return "Investigating";
+  if (v === "ROOT_CAUSE_IDENTIFIED") return "Root cause identified";
+  if (v === "ACTIONS_IN_PROGRESS") return "Actions in progress";
+  if (v === "VERIFIED") return "Verified";
+  if (v === "CLOSED") return "Closed";
+  return "Open";
 }
 
-function generateDefectId(defects) {
-  // Simple numeric increment based on existing D-xxxxx ids.
-  const nums = defects
-    .map((d) => String(d.id || ""))
-    .map((id) => {
-      const m = id.match(/^D-(\d+)$/);
-      return m ? Number(m[1]) : null;
-    })
-    .filter((x) => typeof x === "number" && Number.isFinite(x));
-  const next = (nums.length ? Math.max(...nums) : 10000) + 1;
-  return `D-${next}`;
+function mapUiActionStatusToApi(uiStatus) {
+  const v = String(uiStatus || "").trim().toLowerCase();
+  if (v === "open") return "OPEN";
+  if (v === "in progress") return "IN_PROGRESS";
+  if (v === "done") return "DONE";
+  if (v === "verified") return "VERIFIED";
+  if (v === "canceled") return "CANCELED";
+  if (v === "closed") return "DONE";
+  return "OPEN";
 }
 
-function generateActionId(defect) {
-  const nums = (defect.corrective_actions || [])
-    .map((a) => String(a.id || ""))
-    .map((id) => {
-      const m = id.match(/^CA-(\d+)$/);
-      return m ? Number(m[1]) : null;
-    })
-    .filter((x) => typeof x === "number" && Number.isFinite(x));
-  const next = (nums.length ? Math.max(...nums) : 9000) + 1;
-  return `CA-${next}`;
+function mapApiActionStatusToUi(apiStatus) {
+  const v = String(apiStatus || "").trim().toUpperCase();
+  if (v === "OPEN") return "Open";
+  if (v === "IN_PROGRESS") return "In Progress";
+  if (v === "DONE") return "Done";
+  if (v === "VERIFIED") return "Verified";
+  if (v === "CANCELED") return "Canceled";
+  return "Open";
 }
+
+function mapDefectFromApi(d) {
+  if (!d) return null;
+  return {
+    id: String(d.id),
+    title: d.title || "",
+    description: d.description || "",
+    severity: mapApiSeverityToUi(d.severity),
+    status: mapApiStatusToUi(d.status),
+    // Backend is user-id based; keep UI as string for now, but display usernames if present.
+    reported_by: d.reported_by_detail?.username || "",
+    assigned_to: d.assignee_detail?.username || "",
+    due_date: d.due_date || "",
+    created_at: d.created_at || "",
+    updated_at: d.updated_at || "",
+    occurred_at: d.occurred_at || "",
+    root_cause: d.root_cause || null,
+    corrective_actions: Array.isArray(d.corrective_actions) ? d.corrective_actions : [],
+  };
+}
+
+function mapActionFromApi(a) {
+  if (!a) return null;
+  return {
+    id: String(a.id),
+    title: a.title || "",
+    owner: a.owner_detail?.username || "",
+    status: mapApiActionStatusToUi(a.status),
+    due_date: a.due_date || "",
+    notes: a.description || "",
+    created_at: a.created_at || "",
+    updated_at: a.updated_at || "",
+    completed_at: a.completed_at || null,
+    root_cause: a.root_cause ?? null,
+  };
+}
+
+// -------------------------
+// Endpoints
+// -------------------------
 
 /**
  * PUBLIC_INTERFACE
  * Checks backend availability.
  */
 export async function getBackendHealth() {
-  // Backend routes from api/urls.py: /api/health/
   return apiGet("/api/health/");
 }
 
 /**
  * PUBLIC_INTERFACE
- * Lists defects with optional filters.
+ * Lists defects (backend supports filters; frontend currently uses q/area which backend doesn't).
  */
-export async function listDefects({ q, status, severity, area } = {}) {
-  const all = ensureSeed();
-
-  const query = (q || "").trim().toLowerCase();
-
-  return all
-    .filter((d) => {
-      if (status && d.status !== status) return false;
-      if (severity && d.severity !== severity) return false;
-      if (area && d.area !== area) return false;
-      if (!query) return true;
-
-      const haystack = [
-        d.id,
-        d.title,
-        d.description,
-        d.status,
-        d.severity,
-        d.priority,
-        d.area,
-        d.reported_by,
-        d.assigned_to,
-        ...(d.tags || []),
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-
-      return haystack.includes(query);
-    })
-    .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
+export async function listDefects({ status, severity } = {}) {
+  const qs = new URLSearchParams();
+  if (status) qs.set("status", mapUiStatusToApi(status));
+  if (severity) qs.set("severity", mapUiSeverityToApi(severity));
+  const query = qs.toString();
+  const items = await apiGet(`/api/defects/${query ? `?${query}` : ""}`);
+  return (items || []).map(mapDefectFromApi);
 }
 
 /**
@@ -172,8 +148,14 @@ export async function listDefects({ q, status, severity, area } = {}) {
  * Get a single defect by id.
  */
 export async function getDefect(defectId) {
-  const all = ensureSeed();
-  return all.find((d) => d.id === defectId) || null;
+  const d = await apiGet(`/api/defects/${encodeURIComponent(defectId)}/`);
+  const mapped = mapDefectFromApi(d);
+  if (!mapped) return null;
+
+  // Attach a UI-friendly corrective_actions list for the detail page.
+  mapped.corrective_actions = (d.corrective_actions || []).map(mapActionFromApi);
+
+  return mapped;
 }
 
 /**
@@ -181,28 +163,20 @@ export async function getDefect(defectId) {
  * Create a new defect.
  */
 export async function createDefect(input) {
-  const all = ensureSeed();
-  const id = generateDefectId(all);
-
-  const created = {
-    id,
+  const payload = {
     title: input.title || "",
     description: input.description || "",
-    status: input.status || "Open",
-    severity: input.severity || "Minor",
-    priority: input.priority || "P3",
-    area: input.area || "General",
-    reported_by: input.reported_by || "",
-    assigned_to: input.assigned_to || "",
-    due_date: input.due_date || "",
-    tags: Array.isArray(input.tags) ? input.tags : [],
-    corrective_actions: [],
-    created_at: nowIso(),
-    updated_at: nowIso(),
+    severity: mapUiSeverityToApi(input.severity),
+    status: mapUiStatusToApi(input.status),
+    due_date: input.due_date || null,
+    occurred_at: input.occurred_at || null,
+    // reported_by / assignee are user ids in backend; leave null in this simple UI
+    reported_by: null,
+    assignee: null,
   };
 
-  saveAll([created, ...all]);
-  return created;
+  const created = await apiPost("/api/defects/", payload);
+  return mapDefectFromApi(created);
 }
 
 /**
@@ -210,21 +184,17 @@ export async function createDefect(input) {
  * Update an existing defect.
  */
 export async function updateDefect(defectId, patch) {
-  const all = ensureSeed();
-  const idx = all.findIndex((d) => d.id === defectId);
-  if (idx === -1) return null;
-
-  const updated = {
-    ...all[idx],
-    ...patch,
-    tags: Array.isArray(patch.tags) ? patch.tags : all[idx].tags,
-    updated_at: nowIso(),
+  const payload = {
+    ...("title" in patch ? { title: patch.title } : {}),
+    ...("description" in patch ? { description: patch.description } : {}),
+    ...("severity" in patch ? { severity: mapUiSeverityToApi(patch.severity) } : {}),
+    ...("status" in patch ? { status: mapUiStatusToApi(patch.status) } : {}),
+    ...("due_date" in patch ? { due_date: patch.due_date || null } : {}),
+    ...("occurred_at" in patch ? { occurred_at: patch.occurred_at || null } : {}),
   };
 
-  const next = [...all];
-  next[idx] = updated;
-  saveAll(next);
-  return updated;
+  const updated = await apiPut(`/api/defects/${encodeURIComponent(defectId)}/`, payload);
+  return mapDefectFromApi(updated);
 }
 
 /**
@@ -232,88 +202,104 @@ export async function updateDefect(defectId, patch) {
  * Delete defect.
  */
 export async function deleteDefect(defectId) {
-  const all = ensureSeed();
-  const next = all.filter((d) => d.id !== defectId);
-  saveAll(next);
-  return { ok: next.length !== all.length };
+  await apiDelete(`/api/defects/${encodeURIComponent(defectId)}/`);
+  return { ok: true };
 }
 
 /**
  * PUBLIC_INTERFACE
- * Add a corrective action to a defect.
+ * Transition defect status via the workflow transition endpoint.
+ */
+export async function transitionDefect(defectId, newStatusApi) {
+  const updated = await apiPost(`/api/defects/${encodeURIComponent(defectId)}/transition/`, {
+    status: newStatusApi,
+  });
+  return mapDefectFromApi(updated);
+}
+
+/**
+ * PUBLIC_INTERFACE
+ * Create or update the root cause for a defect.
+ *
+ * Backend model is 1:1 RootCause <-> Defect.
+ */
+export async function upsertRootCause(defectId, input) {
+  // Try find existing root cause by defect filter; then create/update accordingly.
+  const existing = await apiGet(`/api/root-causes/?defect=${encodeURIComponent(defectId)}`);
+  if (Array.isArray(existing) && existing.length > 0) {
+    const id = existing[0].id;
+    return apiPatch(`/api/root-causes/${encodeURIComponent(id)}/`, {
+      summary: input.summary || "",
+      analysis: input.analysis || "",
+      status: input.status || "IN_PROGRESS",
+    });
+  }
+
+  return apiPost("/api/root-causes/", {
+    defect_id: Number(defectId),
+    summary: input.summary || "",
+    analysis: input.analysis || "",
+    status: input.status || "IN_PROGRESS",
+  });
+}
+
+/**
+ * PUBLIC_INTERFACE
+ * Add a corrective action to a defect (optionally linked to root cause).
  */
 export async function addCorrectiveAction(defectId, input) {
-  const all = ensureSeed();
-  const idx = all.findIndex((d) => d.id === defectId);
-  if (idx === -1) return null;
-
-  const defect = all[idx];
-  const action = {
-    id: generateActionId(defect),
+  const created = await apiPost("/api/corrective-actions/", {
+    defect: Number(defectId),
+    root_cause: input.root_cause_id ?? null,
     title: input.title || "",
-    owner: input.owner || "",
-    status: input.status || "Open",
-    due_date: input.due_date || "",
-    notes: input.notes || "",
-    created_at: nowIso(),
-    updated_at: nowIso(),
-  };
+    description: input.notes || input.description || "",
+    status: mapUiActionStatusToApi(input.status),
+    owner: null,
+    due_date: input.due_date || null,
+  });
 
-  const next = [...all];
-  next[idx] = {
-    ...defect,
-    corrective_actions: [action, ...(defect.corrective_actions || [])],
-    updated_at: nowIso(),
-  };
-
-  saveAll(next);
-  return action;
+  return mapActionFromApi(created);
 }
 
 /**
  * PUBLIC_INTERFACE
- * Update corrective action on a defect.
+ * Update corrective action.
+ *
+ * NOTE: actionId is the backend integer id (as string in UI).
  */
-export async function updateCorrectiveAction(defectId, actionId, patch) {
-  const all = ensureSeed();
-  const idx = all.findIndex((d) => d.id === defectId);
-  if (idx === -1) return null;
-
-  const defect = all[idx];
-  const actions = defect.corrective_actions || [];
-  const aIdx = actions.findIndex((a) => a.id === actionId);
-  if (aIdx === -1) return null;
-
-  const updated = {
-    ...actions[aIdx],
-    ...patch,
-    updated_at: nowIso(),
+export async function updateCorrectiveAction(_defectId, actionId, patch) {
+  const payload = {
+    ...("title" in patch ? { title: patch.title } : {}),
+    ...("notes" in patch ? { description: patch.notes || "" } : {}),
+    ...("description" in patch ? { description: patch.description || "" } : {}),
+    ...("due_date" in patch ? { due_date: patch.due_date || null } : {}),
+    ...("status" in patch ? { status: mapUiActionStatusToApi(patch.status) } : {}),
   };
 
-  const nextActions = [...actions];
-  nextActions[aIdx] = updated;
-
-  const next = [...all];
-  next[idx] = { ...defect, corrective_actions: nextActions, updated_at: nowIso() };
-  saveAll(next);
-  return updated;
+  const updated = await apiPatch(`/api/corrective-actions/${encodeURIComponent(actionId)}/`, payload);
+  return mapActionFromApi(updated);
 }
 
 /**
  * PUBLIC_INTERFACE
- * Delete corrective action on a defect.
+ * Delete corrective action.
  */
-export async function deleteCorrectiveAction(defectId, actionId) {
-  const all = ensureSeed();
-  const idx = all.findIndex((d) => d.id === defectId);
-  if (idx === -1) return null;
+export async function deleteCorrectiveAction(_defectId, actionId) {
+  await apiDelete(`/api/corrective-actions/${encodeURIComponent(actionId)}/`);
+  return { ok: true };
+}
 
-  const defect = all[idx];
-  const actions = defect.corrective_actions || [];
-  const nextActions = actions.filter((a) => a.id !== actionId);
-
-  const next = [...all];
-  next[idx] = { ...defect, corrective_actions: nextActions, updated_at: nowIso() };
-  saveAll(next);
-  return { ok: nextActions.length !== actions.length };
+/**
+ * PUBLIC_INTERFACE
+ * Attempt to close a defect using the canonical flow:
+ * - Ensure root cause is identified/approved
+ * - Ensure actions are done/verified
+ * - Transition defect to VERIFIED then CLOSED (backend enforces transitions)
+ */
+export async function closeDefect(defectId) {
+  // Move defect to VERIFIED (if possible) then CLOSED.
+  // If defect isn't in ACTIONS_IN_PROGRESS, caller should have progressed earlier.
+  await transitionDefect(defectId, "VERIFIED");
+  const closed = await transitionDefect(defectId, "CLOSED");
+  return closed;
 }

@@ -17,7 +17,7 @@ export default function DefectForm() {
     title: "",
     description: "",
     status: "Open",
-    severity: "Minor",
+    severity: "Medium",
     priority: "P3",
     area: "General",
     reported_by: "",
@@ -180,7 +180,9 @@ export default function DefectForm() {
                   >
                     <option value="Open">Open</option>
                     <option value="Investigating">Investigating</option>
-                    <option value="In Progress">In Progress</option>
+                    <option value="Root cause identified">Root cause identified</option>
+                    <option value="Actions in progress">Actions in progress</option>
+                    <option value="Verified">Verified</option>
                     <option value="Closed">Closed</option>
                   </select>
                 </div>
@@ -196,8 +198,9 @@ export default function DefectForm() {
                     onChange={(e) => setForm((s) => ({ ...s, severity: e.target.value }))}
                   >
                     <option value="Critical">Critical</option>
-                    <option value="Major">Major</option>
-                    <option value="Minor">Minor</option>
+                    <option value="Major">High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Minor">Low</option>
                   </select>
                 </div>
 
