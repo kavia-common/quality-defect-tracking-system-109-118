@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { getApiBaseUrl } from "../api/client";
 import { listDefects } from "../api/defects";
 import { ErrorAlert, Skeleton } from "../components/Primitives";
 import { formatDate, severityBadgeClass, statusBadgeClass } from "../utils/ui";
@@ -62,8 +63,13 @@ export default function DefectList() {
   async function onExportCsv() {
     // Force a real browser download by navigating directly to the backend CSV endpoint.
     // Per requirements: no fetch/axios/blob.
+    //
+    // IMPORTANT: do not hardcode localhost. In deployed environments the browser is remote
+    // and "localhost" won't point at the backend container.
     try {
-      window.location.href = "http://localhost:3001/api/export-csv";
+      const base = getApiBaseUrl() || "";
+      const exportUrl = `${base}/api/defects/export/${window.location.search || ""}`;
+      window.location.href = exportUrl;
       setExportState({ exporting: false, error: null });
     } catch (err) {
       setExportState({ exporting: false, error: err });
