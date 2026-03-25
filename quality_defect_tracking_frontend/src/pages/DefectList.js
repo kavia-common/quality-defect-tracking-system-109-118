@@ -64,12 +64,18 @@ export default function DefectList() {
     // Force a real browser download by navigating directly to the backend CSV endpoint.
     // Per requirements: no fetch/axios/blob.
     //
-    // IMPORTANT: do not hardcode localhost. In deployed environments the browser is remote
-    // and "localhost" won't point at the backend container.
+    // Root cause of "200 text/html":
+    // If API base URL is empty (or misconfigured), navigating to a relative `/api/...` URL
+    // hits the React app/dev-server instead of Django, which returns HTML.
     try {
       const base = getApiBaseUrl() || "";
-      const exportUrl = `${base}/api/defects/export/${window.location.search || ""}`;
-      window.location.href = exportUrl;
+
+      // Use URL() to safely join base + path and to correctly append query params.
+      // This guarantees we target the backend origin (base includes :3001 via inference).
+      const url = new URL("/api/defects/export/", base || window.location.origin);
+      url.search = window.location.search || "";
+
+      window.location.assign(url.toString());
       setExportState({ exporting: false, error: null });
     } catch (err) {
       setExportState({ exporting: false, error: err });
