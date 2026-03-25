@@ -1,6 +1,32 @@
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "./client";
 
 /**
+ * Creates a stable CSV-safe cell value.
+ * - Wraps in quotes
+ * - Escapes quotes by doubling
+ * - Replaces newlines with spaces
+ */
+function csvCell(v) {
+  const s = String(v ?? "");
+  const cleaned = s.replace(/\r?\n/g, " ").replace(/"/g, '""');
+  return `"${cleaned}"`;
+}
+
+function toIsoDateOnly(dateLike) {
+  // For HTML date inputs and backend expectations: 'YYYY-MM-DD' or null.
+  if (!dateLike) return null;
+  // If already in YYYY-MM-DD, keep it.
+  const trimmed = String(dateLike).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const d = new Date(trimmed);
+  if (Number.isNaN(d.getTime())) return null;
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/**
  * Frontend API module backed by the Django REST API.
  *
  * Base routing assumptions:
@@ -186,7 +212,7 @@ export async function createDefect(input) {
     description: input.description || "",
     severity: mapUiSeverityToApi(input.severity),
     status: mapUiStatusToApi(input.status),
-    due_date: input.due_date || null,
+    due_date: toIsoDateOnly(input.due_date),
     occurred_at: input.occurred_at || null,
 
     // Persist UI fields
@@ -216,7 +242,7 @@ export async function updateDefect(defectId, patch) {
     ...("description" in patch ? { description: patch.description } : {}),
     ...("severity" in patch ? { severity: mapUiSeverityToApi(patch.severity) } : {}),
     ...("status" in patch ? { status: mapUiStatusToApi(patch.status) } : {}),
-    ...("due_date" in patch ? { due_date: patch.due_date || null } : {}),
+    ...("due_date" in patch ? { due_date: toIsoDateOnly(patch.due_date) } : {}),
     ...("occurred_at" in patch ? { occurred_at: patch.occurred_at || null } : {}),
 
     // Persist UI fields
@@ -306,7 +332,7 @@ export async function addCorrectiveAction(defectId, input) {
     description: input.notes || input.description || "",
     status: mapUiActionStatusToApi(input.status),
     owner: null,
-    due_date: input.due_date || null,
+    due_date: toIsoDateOnly(input.due_date),
   });
 
   return mapActionFromApi(created);
@@ -353,4 +379,108 @@ export async function closeDefect(defectId) {
   await transitionDefect(defectId, "VERIFIED");
   const closed = await transitionDefect(defectId, "CLOSED");
   return closed;
+}
+
+/**
+ * PUBLIC_INTERFACE
+ * Export a single defect (including root cause and corrective actions) as CSV text.
+ *
+ * @param {object} defectDetail - object returned from getDefect(defectId)
+ * @returns {string} CSV text
+ */
+export function exportDefectAuditCsv(defectDetail) {
+  const d = defectDetail || {};
+  const rc = d.root_cause || {};
+  const actions = Array.isArray(d.corrective_actions) ? d.corrective_actions : [];
+
+  const header = [
+    "defect_id",
+    "title",
+    "area",
+    "severity",
+    "status",
+    "priority",
+    "reported_by",
+    "assigned_to",
+    "due_date",
+    "created_at",
+    "updated_at",
+    "root_cause_status",
+    "root_cause_summary",
+    "root_cause_analysis",
+    "action_id",
+    "action_title",
+    "action_owner",
+    "action_status",
+    "action_due_date",
+    "action_notes",
+    "action_updated_at",
+  ];
+
+  // One row per corrective action; if no actions, emit a single row with empty action columns.
+  const rows = (actions.length ? actions : [null]).map((a) => {
+    const action = a || {};
+    return [
+      d.id ?? "",
+      d.title ?? "",
+      d.area ?? "",
+      d.severity ?? "",
+      d.status ?? "",
+      d.priority ?? "",
+      d.reported_by ?? "",
+      d.assigned_to ?? "",
+      d.due_date ?? "",
+      d.created_at ?? "",
+      d.updated_at ?? "",
+      rc.status ?? "",
+      rc.summary ?? "",
+      rc.analysis ?? "",
+      action.id ?? "",
+      action.title ?? "",
+      action.owner ?? "",
+      action.status ?? "",
+      action.due_date ?? "",
+      action.notes ?? "",
+      action.updated_at ?? "",
+    ]
+      .map(csvCell)
+      .join(",");
+  });
+
+  return `${header.join(",")}\n${rows.join("\n")}\n`;
+}
+
+/**
+ * PUBLIC_INTERFACE
+ * Export all defects as audit CSV (fetches detail for each defect to include root cause + actions).
+ *
+ * @param {{signal?: AbortSignal}} [options]
+ * @returns {Promise<string>}
+ */
+export async function exportAllDefectsAuditCsv(options = {}) {
+  const defects = await listDefects({});
+  // Fetch detail for each defect (sequential to avoid overwhelming backend; still fine for small datasets).
+  const chunks = [];
+  let wroteHeader = false;
+
+  for (const d of defects) {
+    const detail = await getDefect(d.id, options);
+    const csv = exportDefectAuditCsv(detail);
+
+    if (!wroteHeader) {
+      chunks.push(csv);
+      wroteHeader = true;
+    } else {
+      // Drop header line for subsequent defects.
+      const lines = csv.split("\n");
+      chunks.push(lines.slice(1).join("\n"));
+    }
+  }
+
+  if (!chunks.length) {
+    // Provide a valid CSV with header only.
+    return "defect_id,title,area,severity,status,priority,reported_by,assigned_to,due_date,created_at,updated_at,root_cause_status,root_cause_summary,root_cause_analysis,action_id,action_title,action_owner,action_status,action_due_date,action_notes,action_updated_at\n";
+  }
+
+  return chunks.join("");
 }
