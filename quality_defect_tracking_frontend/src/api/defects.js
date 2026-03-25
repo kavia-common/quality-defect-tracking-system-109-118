@@ -382,9 +382,12 @@ export async function deleteCorrectiveAction(_defectId, actionId) {
  * - Transition defect to VERIFIED then CLOSED (backend enforces transitions)
  */
 export async function closeDefect(defectId) {
-  // Move defect to VERIFIED (if possible) then CLOSED.
-  // If defect isn't in ACTIONS_IN_PROGRESS, caller should have progressed earlier.
-  await transitionDefect(defectId, "VERIFIED");
+  // Backend enforces the simplified workflow:
+  // OPEN → INVESTIGATING → ACTIONS_IN_PROGRESS → CLOSED
+  // and also enforces closure gating (RCA complete + actions DONE/VERIFIED).
+  //
+  // Older legacy flows used VERIFIED; attempting that transition in the new flow
+  // can yield a 400 (invalid transition). So we go straight to CLOSED.
   const closed = await transitionDefect(defectId, "CLOSED");
   return closed;
 }
