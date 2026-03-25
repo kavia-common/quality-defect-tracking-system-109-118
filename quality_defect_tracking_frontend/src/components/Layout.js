@@ -55,8 +55,8 @@ export function Layout({ children }) {
         {children}
         <div style={{ marginTop: 18 }} className="muted small">
           Tip: Configure <code>REACT_APP_API_BASE</code> (or <code>REACT_APP_BACKEND_URL</code>) to
-          point to the Django backend (e.g. https://…:3001). Current UI stores defects locally until
-          defect CRUD endpoints are available.
+          point to the Django backend (e.g. https://…:3001). If it’s not set, the app may be unable
+          to load or save defects.
         </div>
       </main>
     </div>
